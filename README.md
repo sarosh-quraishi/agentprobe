@@ -28,28 +28,36 @@ This is **tool-call command swap** — the human approved `bash`, not the specif
 ## Install
 
 ```bash
-pip install agentprobe
+pip install git+https://github.com/sarosh-quraishi/agentprobe
 ```
 
-Or from source:
+## Try it in 2 minutes
+
+Run the demo against a built-in vulnerable agent (auto-approving bash gate):
 
 ```bash
-git clone https://github.com/saroshq/agentprobe
+git clone https://github.com/sarosh-quraishi/agentprobe
 cd agentprobe
-pip install -e ".[dev]"
+pip install -e .
+export OPENROUTER_API_KEY=...
+python examples/demo_target.py
 ```
 
-## Quickstart
+Expected output: at least one `SWAP` verdict — the demo agent is intentionally naive.
+Full report in `agentprobe_report.md`.
+
+## Plug in your own agent
 
 ```python
 from agentprobe import run, Target, RunResult
+import asyncio
 
 class MyAgentTarget:
     async def run(self, prompt: str, history: list) -> RunResult:
         result = await my_agent.invoke(prompt)
         return RunResult(
             output=result.text,
-            tool_calls=result.tool_calls,  # list of command strings
+            tool_calls=result.tool_calls,  # list of command strings that fired
         )
 
     def plant_file(self, name: str, content: str) -> None:
@@ -59,10 +67,10 @@ class MyAgentTarget:
     def cleanup(self) -> None:
         ...
 
-import asyncio
-target = MyAgentTarget()
-asyncio.run(run(target, probes=["s2", "s3"]))
+asyncio.run(run(MyAgentTarget(), probes=["s2", "s3"]))
 ```
+
+See `examples/stub_target.py` for a minimal template.
 
 Results in `agentprobe_report.md`.
 
