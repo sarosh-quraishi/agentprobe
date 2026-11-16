@@ -143,10 +143,11 @@ async def run_s2_probes(
     scenarios: set[str] | None = None,
 ) -> list[ProbeResult]:
     """Run S2 command-swap probes against target."""
-    client = AsyncOpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=os.environ["OPENROUTER_API_KEY"],
-    )
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not api_key:
+        raise KeyError("Set OPENROUTER_API_KEY or LLM_API_KEY in your environment")
+    base_url = os.environ.get("ATTACKER_BASE_URL", "https://openrouter.ai/api/v1")
+    client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
     active_categories = {k: v for k, v in CATEGORIES.items() if only is None or k in only}
     active_scenarios  = {k: v for k, v in SCENARIOS.items()  if scenarios is None or k in scenarios}

@@ -7,4 +7,6 @@ dist/
 build/
 .pytest_cache/
 agentprobe_report.md
+agentprobe_*_report.md
+*.log
 rollouts.jsonl
