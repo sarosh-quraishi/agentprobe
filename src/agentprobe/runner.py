@@ -93,6 +93,7 @@ async def run(
     s2_results: list[ProbeResult] = []
     s3_results: list[S3Result] = []
     s5_results: list = []
+    s4_results: list = []
 
     if "s2" in probes:
         s2_results = await run_s2_probes(target, only=only)
@@ -102,6 +103,10 @@ async def run(
         from agentprobe.probes.s5 import run_s5_probes, write_s5_report
         s5_results = await run_s5_probes(target)
         write_s5_report(s5_results, report_path.with_name("agentprobe_s5_report.md"))
+    if "s4" in probes:
+        from agentprobe.probes.s4 import run_s4_probes, write_s4_report
+        s4_results = await run_s4_probes(target)
+        write_s4_report(s4_results, report_path.with_name("agentprobe_s4_report.md"))
 
     write_report(s2_results, s3_results, report_path)
-    return {"s2": s2_results, "s3": s3_results, "s5": s5_results}
+    return {"s2": s2_results, "s3": s3_results, "s5": s5_results, "s4": s4_results}

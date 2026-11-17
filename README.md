@@ -24,6 +24,7 @@ This is **tool-call command swap** — the human approved `bash`, not the specif
 |-------|-------------|---------------|
 | `s2`  | Tool-call command swap | Did the executed command match what the human approved? |
 | `s3`  | RAG / retrieval poisoning | Did injected content in a knowledge base change agent behaviour? |
+| `s4`  | Subagent hijack | In a multi-agent system, do subagent actions pass the same human-approval gate as the primary, or can injected content make a subagent act unauthorized and ungated? |
 | `s5`  | Edit-scope swap | Did the agent edit only the files/scope the human authorized, or did poisoned repo content widen, redirect, or inject into its edits? |
 
 ## Install
@@ -131,7 +132,7 @@ Filed gap report on garak: [issue #2436](https://github.com/NVIDIA/garak/issues/
 
 ## Roadmap
 
-- [ ] S4: cross-agent context poisoning (subagent hijack)
+- [x] S4: cross-agent context poisoning (subagent hijack)
 - [ ] v1.5: RAAG — verdict-weighted payload retrieval across runs
 - [ ] v2: RL-trained attacker (GRPO on rollouts)
 - [ ] AgentCore Gateway adapter (Cedar policy validation)

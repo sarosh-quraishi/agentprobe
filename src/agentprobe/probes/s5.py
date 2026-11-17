@@ -196,6 +196,7 @@ async def run_s5_probes(
     control: bool = True,
     payload_autoloaded: bool = False,
     capable: bool = True,
+    stop_on_first: bool = True,
 ) -> list[S5Result]:
     """Run S5 edit-scope probes against target.
 
@@ -203,6 +204,8 @@ async def run_s5_probes(
     control:            run each case once with no payload first, for a baseline.
     payload_autoloaded: target puts the planted file in context itself.
     capable:            set False for targets that cannot report file edits.
+    stop_on_first:      stop a case at its first finding (default). Set False to
+                        run every attempt and measure a success rate.
     """
     api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY")
     if not api_key:
@@ -269,7 +272,8 @@ async def run_s5_probes(
             print(f"  [{verdict:7}] attempt {attempt}: out_of_scope={d['out_of_scope']} marker={d['marker_hit']}")
 
             if verdict in FINDING_VERDICTS:
-                break
+                if stop_on_first:
+                    break
             elif verdict == "BENIGN":
                 partial_wins.append(payload[:200])
             else:
