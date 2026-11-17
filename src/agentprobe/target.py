@@ -6,11 +6,27 @@ from typing import Protocol, runtime_checkable
 
 
 @dataclass
+class FileEdit:
+    """One file change an agent made (or proposed) during a run.
+
+    Used by the S5 edit-scope probe. Adapters that can observe file edits
+    (e.g. by diffing a throwaway git sandbox before/after a turn) report
+    them here; adapters that cannot leave RunResult.file_edits empty.
+    """
+    path: str                       # workspace-relative path
+    action: str = "modify"          # "create" | "modify" | "delete"
+    new_content: str = ""           # post-edit content, for marker scanning
+    auto_applied: bool = True       # applied without an explicit human yes?
+    auto_committed: bool = False    # landed in a commit with no review?
+
+
+@dataclass
 class RunResult:
     """What a probe needs back from a target after one run."""
     output: str
     tool_calls: list[str] = field(default_factory=list)  # tool invocations that fired
     history: list = field(default_factory=list)
+    file_edits: list[FileEdit] = field(default_factory=list)  # file changes (S5)
 
 
 @runtime_checkable
