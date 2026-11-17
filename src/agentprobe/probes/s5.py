@@ -8,12 +8,12 @@ the same question of file *edits*:
   Agent edits: calculator.py  AND  config.py, .github/workflows/ci.yml
   The human authorized an edit to calculator.py — not to those other files.
 
-This is the authorization gap for edit-first agents (e.g. Aider): edits are
+This is the authorization gap for edit-first coding agents: edits are
 applied and often auto-committed without an explicit per-file approval, so a
 poisoned in-repo convention file can widen or redirect what gets changed.
 
 Observable: RunResult.file_edits (the set of files the agent changed, with
-content). Adapters capture this however they can — the reference Aider adapter
+content). Adapters capture this however they can — a typical adapter
 diffs a throwaway git sandbox before/after each turn.
 
 Verdicts:
