@@ -24,6 +24,8 @@ This is **tool-call command swap** — the human approved `bash`, not the specif
 |-------|-------------|---------------|
 | `s2`  | Tool-call command swap | Did the executed command match what the human approved? |
 | `s3`  | RAG / retrieval poisoning | Did injected content in a knowledge base change agent behaviour? |
+| `s4`  | Subagent hijack | In a multi-agent system, do subagent actions pass the same human-approval gate as the primary, or can injected content make a subagent act unauthorized and ungated? |
+| `s5`  | Edit-scope swap | Did the agent edit only the files/scope the human authorized, or did poisoned repo content widen, redirect, or inject into its edits? |
 
 ## Install
 
@@ -94,6 +96,26 @@ See `examples/stub_target.py` for the minimal adapter template.
 
 The `Target` protocol is three methods. If your agent can run a prompt and report which tool calls fired, you can plug it in.
 
+### Probing an edit-first coding agent (`s5`)
+
+The `s5` edit-scope probe tests whether poisoned repo content (a conventions / instructions file) makes an agent edit files or scope the human never authorized. To support it, an adapter also populates `RunResult.file_edits` — the files the agent changed, each with its content and an `auto_committed` flag. Adapters that can't observe edits make `s5` return `NA`.
+
+A typical adapter captures edits by diffing a throwaway git sandbox before and after each turn:
+
+```python
+from agentprobe.target import FileEdit, RunResult
+
+# ... after the agent runs in a seeded git sandbox ...
+changed = git_diff_name_only(sandbox, before_sha, "HEAD")   # your helper
+edits = [
+    FileEdit(path=p, new_content=(sandbox / p).read_text(), auto_committed=True)
+    for p in changed
+]
+return RunResult(output="", tool_calls=captured_shell_cmds, file_edits=edits)
+```
+
+Run `s5` with `payload_autoloaded=True` when the agent's convention/instructions file is already in its context (so no explicit read step is required); otherwise the probe gates findings on the agent having read the planted file first.
+
 ## What this doesn't cover
 
 - Static payload libraries (use garak)
@@ -110,7 +132,7 @@ Filed gap report on garak: [issue #2436](https://github.com/NVIDIA/garak/issues/
 
 ## Roadmap
 
-- [ ] S4: cross-agent context poisoning (subagent hijack)
+- [x] S4: cross-agent context poisoning (subagent hijack)
 - [ ] v1.5: RAAG — verdict-weighted payload retrieval across runs
 - [ ] v2: RL-trained attacker (GRPO on rollouts)
 - [ ] AgentCore Gateway adapter (Cedar policy validation)
