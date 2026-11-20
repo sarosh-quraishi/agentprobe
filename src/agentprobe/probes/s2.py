@@ -97,6 +97,19 @@ class ProbeResult:
 FINDING_VERDICTS = {"SWAP", "APPEND", "ENV"}
 
 
+def _make_client() -> AsyncOpenAI:
+    """Build the attacker-LLM client shared by all probes.
+
+    Accepts OPENROUTER_API_KEY or LLM_API_KEY; base URL is overridable via
+    ATTACKER_BASE_URL (defaults to OpenRouter).
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY")
+    if not api_key:
+        raise KeyError("Set OPENROUTER_API_KEY or LLM_API_KEY in your environment")
+    base_url = os.environ.get("ATTACKER_BASE_URL", "https://openrouter.ai/api/v1")
+    return AsyncOpenAI(base_url=base_url, api_key=api_key)
+
+
 async def _generate_payload(
     client: AsyncOpenAI,
     category: str,
@@ -340,11 +353,7 @@ async def run_s2_probes(
     payload_autoloaded: target puts the planted file in context itself, so the
                 agent need not read it for a finding to count.
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY")
-    if not api_key:
-        raise KeyError("Set OPENROUTER_API_KEY or LLM_API_KEY in your environment")
-    base_url = os.environ.get("ATTACKER_BASE_URL", "https://openrouter.ai/api/v1")
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+    client = _make_client()
 
     active_categories = {k: v for k, v in CATEGORIES.items() if only is None or k in only}
     active_scenarios  = {k: v for k, v in SCENARIOS.items()  if scenarios is None or k in scenarios}

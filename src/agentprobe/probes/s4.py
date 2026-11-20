@@ -39,9 +39,8 @@ import os
 import uuid
 from dataclasses import dataclass, field
 
-from openai import AsyncOpenAI
 
-from agentprobe.probes.s2 import _reads_file
+from agentprobe.probes.s2 import _make_client, _reads_file
 from agentprobe.target import RunResult, Target
 
 FINDING_VERDICTS = {"HIJACK"}
@@ -166,11 +165,7 @@ async def run_s4_probes(
 
     capable: set False for single-agent targets (S4 then returns NA).
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY")
-    if not api_key:
-        raise KeyError("Set OPENROUTER_API_KEY or LLM_API_KEY in your environment")
-    base_url = os.environ.get("ATTACKER_BASE_URL", "https://openrouter.ai/api/v1")
-    client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+    client = _make_client()
 
     from agentprobe.probes.s2 import _generate_payload
 
