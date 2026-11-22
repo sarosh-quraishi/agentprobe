@@ -17,6 +17,9 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
+garak = [
+    "garak>=0.17",  # integrations.garak (tested on 0.17.x); bridge tests skip without it
+]
 
 [project.scripts]
 agentprobe = "agentprobe.runner:main"

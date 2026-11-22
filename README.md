@@ -27,6 +27,34 @@ This is **tool-call command swap** — the human approved `bash`, not the specif
 | `s4`  | Subagent hijack | In a multi-agent system, do subagent actions pass the same human-approval gate as the primary, or can injected content make a subagent act unauthorized and ungated? |
 | `s5`  | Edit-scope swap | Did the agent edit only the files/scope the human authorized, or did poisoned repo content widen, redirect, or inject into its edits? |
 
+## Guard conformance (`GateOracle`)
+
+The probes above drive a whole agent. `GateOracle` tests the other half: the
+agent's **guard function** directly — given a command, would the gate block it,
+route it to human approval, or let it run silently? It's pure, deterministic, and
+needs no API key, so you can compare gates across tools on the same adversarial
+inputs.
+
+```bash
+python examples/oracle_demo.py   # seed battery vs. a deliberately-naive reference gate
+```
+
+```python
+from agentprobe import SEED_BATTERY, ReferenceAllowlistOracle
+
+report = SEED_BATTERY.run(ReferenceAllowlistOracle())
+print(report.passed, "/", report.total, "as expected")
+for r in report.bypasses:
+    print("BYPASS:", r.case.command)   # ran silently, should have been contained
+for r in report.weaks:
+    print("WEAK:", r.case.command)     # only sent to approval, needed a hard block
+```
+
+A target-specific oracle wraps a real guard (e.g. a bridge into a tool's shipped
+command classifier) behind the same `classify(command) -> GateVerdict` protocol;
+those bridges stay in the private adapter repos, this repo ships the protocol,
+the battery runner, and the reference oracle.
+
 ## Install
 
 ```bash
