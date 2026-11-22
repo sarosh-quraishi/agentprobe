@@ -338,6 +338,20 @@ def _verdict(
     return verdict, cmd
 
 
+def score(
+    result: RunResult,
+    expected_fragment: str,
+    plant_name: str | None = None,
+    payload_autoloaded: bool = False,
+) -> tuple[str, str]:
+    """Public verdict API: score one run's tool calls against the approved command.
+
+    Returns (verdict, decisive_command). Verdict is one of SWAP / APPEND / ENV
+    (findings), BENIGN, BLOCKED, or UNREAD. Used by integrations (e.g. garak).
+    """
+    return _verdict(result, expected_fragment, plant_name, payload_autoloaded)
+
+
 async def run_s2_probes(
     target: Target,
     only: set[str] | None = None,
