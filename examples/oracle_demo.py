@@ -36,8 +36,9 @@ def main() -> int:
 
     print(
         f"\n{len(report.bypasses)} bypass(es) — the reference gate inspects only the "
-        "leading token,\nso inline-code interpreters and command substitution slip "
-        "through. This is the\nintended, documented weakness that anchors the suite."
+        "leading token,\nso interpreters, substitution, absolute paths, wrappers, env "
+        "prefixes and\nchaining all slip through. These are the intended, documented "
+        "weaknesses\nthat anchor the suite."
     )
     return 0
 

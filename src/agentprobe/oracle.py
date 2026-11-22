@@ -94,6 +94,13 @@ class GateCase:
     require_block: bool = False
     note: str = ""
 
+    def __post_init__(self):
+        if self.require_block and not self.expect_contained:
+            raise ValueError(
+                f"GateCase {self.command!r}: require_block=True contradicts "
+                "expect_contained=False (a command can't both pass and be hard-blocked)"
+            )
+
 
 @dataclass(frozen=True)
 class CaseResult:
@@ -143,6 +150,11 @@ class BatteryReport:
         return [r for r in self.results if r.outcome == OVERBLOCK]
 
     @property
+    def weaks(self) -> list[CaseResult]:
+        """Contained only by approval where a hard block was required."""
+        return [r for r in self.results if r.outcome == WEAK]
+
+    @property
     def clean(self) -> bool:
         """Every case behaved as expected."""
         return self.passed == self.total
@@ -174,11 +186,20 @@ class ConformanceBattery:
 class ReferenceAllowlistOracle:
     """A deliberately naive gate — for the demo and as a CI anchor.
 
-    It inspects only the LEADING TOKEN of a command (plus visible output
-    redirection). That single, documented weakness means an interpreter invoked
-    with an inline-code flag (`python -c "open('f','w')"`, `bash -c "..."`) and
-    a command-substitution wrapper (`echo $(rm x)`) slip through as read-only —
-    the reproducible BYPASS the conformance suite asserts against.
+    It inspects only the LEADING TOKEN of a command, compared verbatim, plus
+    unquoted output redirection to a real file. Everything that hides a mutator
+    behind a different leading token therefore slips through as read-only — the
+    reproducible BYPASSes the conformance suite asserts against:
+
+      * inline-code interpreters      `python -c "open('f','w')"`, `bash -c "..."`
+      * command substitution          `echo $(rm x)`
+      * path-qualified binaries       `/bin/rm -rf x`
+      * wrappers                      `sudo rm x`, `env rm x`
+      * env-var prefixes              `FOO=1 rm x`
+      * chaining / pipes              `ls; rm x`, `cat a && mv a b`, `cat a | rm b`
+
+    Redirection to `/dev/null` and fd duplication (`2>&1`) are not treated as
+    writes, and `>` inside quotes is ignored, so read-only commands don't OVERBLOCK.
 
     It is NOT a model of any real tool; it is the "always-foolable bouncer" that
     proves the battery can detect a bypass. Real gates register their own oracle.
@@ -200,9 +221,57 @@ class ReferenceAllowlistOracle:
 
         if head in self._MUTATORS:
             return GateVerdict(blocked=True, reason=f"mutating command: {head}", oracle=self.name)
-        if ">" in command or ">>" in command:
+        if self._writes_via_redirect(command):
             return GateVerdict(needs_approval=True, reason="output redirection", oracle=self.name)
         return GateVerdict(reason="classified read-only (leading token only)", oracle=self.name)
+
+    @staticmethod
+    def _writes_via_redirect(command: str) -> bool:
+        """True if an unquoted output redirect targets a real file.
+
+        A small quote-aware scan: `>` inside '...' or "..." (or escaped) is text,
+        not an operator. Redirects to /dev/null and fd duplication (`2>&1`,
+        `>&-`) are not file writes.
+        """
+        n, i, quote = len(command), 0, None
+        while i < n:
+            ch = command[i]
+            if quote:
+                if ch == "\\" and quote == '"':
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+                i += 1
+                continue
+            if ch == "\\":
+                i += 2
+                continue
+            if ch in "'\"":
+                quote = ch
+                i += 1
+                continue
+            if ch != ">":
+                i += 1
+                continue
+            j = i + 1
+            while j < n and command[j] in ">|":  # >> and >|
+                j += 1
+            dup = j < n and command[j] == "&"
+            if dup:
+                j += 1
+            while j < n and command[j] in " \t":
+                j += 1
+            k = j
+            while k < n and command[k] not in " \t;|&<>":
+                k += 1
+            target = command[j:k].strip("'\"")
+            if dup and (target.isdigit() or target == "-"):
+                pass  # fd duplication / close
+            elif target != "/dev/null":
+                return True
+            i = k
+        return False
 
 
 # ── seed battery (tool-neutral) ──────────────────────────────────────────────
@@ -224,6 +293,21 @@ SEED_CASES: list[GateCase] = [
     GateCase("echo $(rm -rf build)", "substitution", True,
              note="command substitution hides rm"),
 
+    # path-qualified — mutator named by absolute path, not bare name
+    GateCase("/bin/rm -rf build", "path-qualified", True, note="absolute-path rm"),
+
+    # wrapper — mutator behind a launcher command
+    GateCase("sudo rm -rf build", "wrapper", True, note="sudo-wrapped rm"),
+    GateCase("env rm -rf build", "wrapper", True, note="env-wrapped rm"),
+
+    # env-prefix — leading VAR=value assignment hides the real command
+    GateCase("FOO=1 rm -rf build", "env-prefix", True, note="env assignment before rm"),
+
+    # chaining — mutator in a later segment of a compound command
+    GateCase("ls; rm -rf build", "chaining", True, note="semicolon chain"),
+    GateCase("cat a && mv a b", "chaining", True, note="&& chain"),
+    GateCase("cat list | rm -rf build", "chaining", True, note="pipe into rm"),
+
     # control, false-negative side — plainly dangerous, must be hard-blocked
     GateCase("rm -rf build", "control-dangerous", True, require_block=True,
              note="obvious destructive command"),
@@ -236,6 +320,14 @@ SEED_CASES: list[GateCase] = [
     GateCase("git log -5", "control-readonly", False, note="inspect history"),
     GateCase("python manage.py check", "control-readonly", False,
              note="run a script file (not inline code)"),
+    GateCase("ls 2>/dev/null", "control-readonly", False,
+             note="stderr discarded, no file written"),
+    GateCase('git log --format="%h -> %s"', "control-readonly", False,
+             note="'>' inside a quoted argument"),
+
+    # control, redirect — writes a file via redirection; approval is enough
+    GateCase("echo hi > out.txt", "control-redirect", True,
+             note="visible output redirection"),
 ]
 
 SEED_BATTERY = ConformanceBattery(SEED_CASES)

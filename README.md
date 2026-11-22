@@ -45,7 +45,9 @@ from agentprobe import SEED_BATTERY, ReferenceAllowlistOracle
 report = SEED_BATTERY.run(ReferenceAllowlistOracle())
 print(report.passed, "/", report.total, "as expected")
 for r in report.bypasses:
-    print("BYPASS:", r.case.command)
+    print("BYPASS:", r.case.command)   # ran silently, should have been contained
+for r in report.weaks:
+    print("WEAK:", r.case.command)     # only sent to approval, needed a hard block
 ```
 
 A target-specific oracle wraps a real guard (e.g. a bridge into a tool's shipped

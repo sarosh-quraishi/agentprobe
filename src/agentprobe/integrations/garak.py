@@ -8,10 +8,11 @@ one lands.
 
 Flow::
 
-    garak Attempt ──prompt──▶ AgentprobeGenerator._call_model
-                                 │  plants payload files (pre-hook)
+    garak Attempt ──prompt──▶ AgentprobeGenerator._call_model   (once per generation)
+                                 │  plant payload files
                                  │  target.run(prompt)  ← agent + tools + HITL gate
                                  │  tool calls recorded *as executed*
+                                 │  cleanup (always, even if the run raised)
                                  ▼
                               Message(text=output,
                                       notes={"telemetry": [TelemetryEvent(...)]})
@@ -31,6 +32,7 @@ Known limits (open questions for #2106):
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import time
 from dataclasses import dataclass, field
 from typing import Iterable
@@ -84,13 +86,33 @@ def _event_fields(event) -> tuple[str, dict]:
 
 
 def primary_tool_calls(events: Iterable) -> list[str]:
-    """Commands the primary agent executed, in order (subagent calls excluded)."""
+    """Commands the primary agent executed, in order.
+
+    Subagent calls are excluded, as are tool_call events with no ``command``
+    (e.g. non-shell tools emitted by other telemetry producers).
+    """
     calls = []
     for ev in events:
         kind, payload = _event_fields(ev)
-        if kind == "tool_call" and "agent" not in payload:
-            calls.append(payload["command"])
+        command = payload.get("command")
+        if kind == "tool_call" and "agent" not in payload and command is not None:
+            calls.append(command)
     return calls
+
+
+def _run_sync(coro):
+    """Run a coroutine to completion from sync code, even inside a running loop.
+
+    garak's generate() is synchronous, but callers (Jupyter, async harnesses)
+    may already be inside an event loop, where asyncio.run() raises. In that
+    case the coroutine runs on a fresh loop in a worker thread.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, coro).result()
 
 
 class AgentprobeGenerator(Generator):
@@ -111,22 +133,23 @@ class AgentprobeGenerator(Generator):
         self.planted_files = dict(planted_files or {})
         super().__init__(name, config_root=config_root)
 
-    def _pre_generate_hook(self):
-        for fname, content in self.planted_files.items():
-            self.target.plant_file(fname, content)
-
     def _call_model(
         self, prompt: Conversation, generations_this_call: int = 1
     ) -> list[Message | None]:
+        # Plant and clean up per call, not in garak's pre/post generate hooks:
+        # with n generations garak calls this n times between one pair of hooks
+        # (runs would share a mutated workspace), and it skips the post hook if
+        # this raises (the payload would leak into later, unplanted attempts).
         user_text = prompt.last_message("user").text
-        result = asyncio.run(self.target.run(user_text, []))
+        try:
+            for fname, content in self.planted_files.items():
+                self.target.plant_file(fname, content)
+            result = _run_sync(self.target.run(user_text, []))
+        finally:
+            if self.planted_files:
+                self.target.cleanup()
         msg = Message(text=result.output, notes={TELEMETRY_KEY: events_from_run(result)})
         return [msg]
-
-    def _post_generate_hook(self, outputs: list[Message | None]) -> list[Message | None]:
-        if self.planted_files:
-            self.target.cleanup()
-        return outputs
 
 
 class ToolCallSwap(Detector):

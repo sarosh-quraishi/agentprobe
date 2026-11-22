@@ -1,4 +1,5 @@
 """garak bridge: an agentprobe Target driven through garak's real Generator/Detector."""
+import asyncio
 import json
 
 import pytest
@@ -12,7 +13,9 @@ from agentprobe.integrations.garak import (  # noqa: E402
     TELEMETRY_KEY,
     VERDICT_KEY,
     AgentprobeGenerator,
+    TelemetryEvent,
     ToolCallSwap,
+    primary_tool_calls,
 )
 from agentprobe.target import RunResult  # noqa: E402
 
@@ -105,3 +108,75 @@ def test_telemetry_survives_report_serialization():
     assert [e["payload"]["command"] for e in events] == ["cat CONTRIBUTING.md", "make test"]
     a.outputs[0].notes[TELEMETRY_KEY] = events  # dict form, as after reload
     assert ToolCallSwap().detect(a) == [1.0]
+
+
+# ── review fixes ─────────────────────────────────────────────────────────────
+
+class CrashingTarget(ScriptedTarget):
+    async def run(self, prompt, history):
+        raise TimeoutError("agent API timed out")
+
+
+def test_crash_still_cleans_up_plant():
+    """A failed run must not leave the payload behind for later attempts."""
+    target = CrashingTarget(["pytest tests/"])
+    gen = AgentprobeGenerator(target, planted_files={"CONTRIBUTING.md": PAYLOAD})
+    with pytest.raises(TimeoutError):
+        gen.generate(_attempt().prompt, 1)
+    assert target.files == {} and target.cleaned
+
+    # the same workspace, reused without a plant, must now score clean
+    honest = ScriptedTarget(["pytest tests/"])
+    honest.files = target.files
+    a = _attempt()
+    assert _run(AgentprobeGenerator(honest), a) == [0.0]
+
+
+class ConsumingTarget(ScriptedTarget):
+    """Deletes the planted note after acting on it (a workspace side effect)."""
+
+    def __init__(self, honest_calls):
+        super().__init__(honest_calls)
+        self.plants = 0
+
+    def plant_file(self, name, content):
+        self.plants += 1
+        super().plant_file(name, content)
+
+    async def run(self, prompt, history):
+        result = await super().run(prompt, history)
+        self.files.clear()
+        return result
+
+
+def test_each_generation_gets_a_fresh_plant():
+    """With n generations, every run starts from the same planted state."""
+    target = ConsumingTarget(["pytest tests/"])
+    gen = AgentprobeGenerator(target, planted_files={"CONTRIBUTING.md": PAYLOAD})
+    a = _attempt()
+    a.outputs = gen.generate(a.prompt, 3)
+    assert target.plants == 3
+    assert ToolCallSwap().detect(a) == [1.0, 1.0, 1.0]
+    assert target.files == {}
+
+
+def test_generate_inside_running_event_loop():
+    """Callers already inside a loop (Jupyter, async harnesses) must not crash."""
+    async def caller():
+        gen = AgentprobeGenerator(ScriptedTarget(["pytest tests/"]))
+        return gen.generate(_attempt().prompt, 1)
+
+    outputs = asyncio.run(caller())
+    assert outputs[0].text == "done"
+
+
+def test_tool_call_without_command_is_skipped():
+    events = [
+        {"kind": "tool_call", "payload": {"tool": "browser"}},
+        TelemetryEvent("tool_call", {"command": "pytest"}),
+    ]
+    assert primary_tool_calls(events) == ["pytest"]
+
+    a = _attempt()
+    a.outputs = [Message(text="done", notes={TELEMETRY_KEY: events})]
+    assert ToolCallSwap().detect(a) == [0.0]
