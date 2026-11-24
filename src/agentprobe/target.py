@@ -4,6 +4,42 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from agentprobe.oracle import GateVerdict
+
+
+@dataclass
+class ToolSpec:
+    """One tool the target exposes, for the S8 invocation-map probe.
+
+    Targets *may* implement `tool_catalog()` to declare their tools so S8 can
+    probe them systematically. `sensitive` flags tools whose silent, ungated
+    invocation is a finding (exec, write, delete, network); targets that know
+    their own tools should set it explicitly, otherwise S8 falls back to a
+    name-based heuristic.
+    """
+    name: str                       # tool id, e.g. "bash", "write_file", "fetch_url"
+    sensitive: bool | None = None   # None → let S8's heuristic decide
+    description: str = ""
+
+
+@dataclass
+class GateEvent:
+    """One tool invocation and how the agent's gate actually treated it.
+
+    Used by the S8 auto-invocation probe. Where S4/S5 annotate authorization
+    state on their own record types (AgentAction.approved, FileEdit.auto_applied),
+    S8 needs the per-call gate decision, carried here as a GateVerdict — the same
+    type GateOracle produces, so the probe-side map and the oracle share one
+    taxonomy (allowed_silently / needs_approval / blocked).
+
+    Adapters that can observe gate decisions report them; adapters that cannot
+    leave RunResult.gate_events empty, and S8 returns UNOBSERVED for those tools.
+    """
+    tool: str                       # tool id that fired, e.g. "bash"
+    command: str                    # concrete invocation / args, for the report
+    verdict: GateVerdict            # how the gate treated it (silent | approval | blocked)
+    triggered_by: str = ""          # which S8 trigger prompt induced it
+
 
 @dataclass
 class FileEdit:
@@ -42,6 +78,7 @@ class RunResult:
     history: list = field(default_factory=list)
     file_edits: list[FileEdit] = field(default_factory=list)  # file changes (S5)
     subagent_actions: list[AgentAction] = field(default_factory=list)  # delegated actions (S4)
+    gate_events: list[GateEvent] = field(default_factory=list)  # tool-call gate decisions (S8)
 
 
 @runtime_checkable
@@ -59,3 +96,9 @@ class Target(Protocol):
     def cleanup(self) -> None:
         """Remove any files planted during this probe."""
         ...
+
+    # Optional, duck-typed (not part of the Protocol so existing targets still
+    # conform): a target MAY implement
+    #     def tool_catalog(self) -> list[ToolSpec]: ...
+    # to declare its tools so S8 can probe them systematically. If absent, S8
+    # falls back to the tool list the agent self-reports during its interview.
