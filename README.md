@@ -110,6 +110,29 @@ leave it empty and `s8` reports `UNOBSERVED`. A target may also expose
 `tool_catalog() -> list[ToolSpec]` for systematic coverage; otherwise `s8`
 falls back to the tools the agent names in its interview.
 
+### Execution-layer benchmark
+
+A versioned, tool-neutral battery that turns `GateOracle` into a report card for
+OWASP **LLM03** (Excessive Agency) / **ASI02** (Tool Misuse): given an
+adversarial command, does the gate contain it or run it silently? It's pure and
+needs no API key, so any gate — the reference, or a real tool's shipped guard
+behind the `GateOracle` protocol — is scored on identical inputs.
+
+```bash
+python examples/benchmark_demo.py   # scores the naive reference gate
+```
+
+```python
+from agentprobe import run_benchmark, scorecard, ReferenceAllowlistOracle
+
+report = run_benchmark(ReferenceAllowlistOracle())
+print(scorecard(report))            # markdown: per-vector rollup + each bypass
+```
+
+The battery is versioned (`BENCHMARK_VERSION`) so a scorecard is reproducible.
+Scope is the single-command gate (LLM03 / ASI02); ASI03 privilege abuse is
+agent-level and lives in the `s4` probe. See [docs/owasp-mapping.md](docs/owasp-mapping.md).
+
 ## Install
 
 ```bash
