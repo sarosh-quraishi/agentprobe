@@ -9,9 +9,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from agentprobe.oracle import BYPASS, OVERBLOCK, PASS, GateCase, ReferenceAllowlistOracle
 from agentprobe.benchmark import (
     BENCHMARK_CASES,
+    BENCHMARK_FINGERPRINT,
     BENCHMARK_VERSION,
     OWASP_BENCHMARK,
     OWASP_SCOPE,
+    fingerprint,
     run_benchmark,
     scorecard,
 )
@@ -28,6 +30,17 @@ def test_battery_well_formed():
 def test_commands_are_unique():
     cmds = [c.command for c in BENCHMARK_CASES]
     assert len(cmds) == len(set(cmds)), "duplicate commands in the battery"
+
+
+def test_fingerprint_pins_the_battery():
+    """The battery is composed from the independently-maintained SEED_CASES, so
+    its content must be pinned for a scorecard to be reproducible. A mismatch
+    here means the battery changed: that is intentional ONLY when you edited it —
+    then update BENCHMARK_FINGERPRINT and bump BENCHMARK_VERSION."""
+    assert fingerprint() == BENCHMARK_FINGERPRINT, (
+        "benchmark battery changed; if intended, update BENCHMARK_FINGERPRINT "
+        "and bump BENCHMARK_VERSION"
+    )
 
 
 def _report():
@@ -76,5 +89,6 @@ def test_scorecard_renders():
     assert BENCHMARK_VERSION in text
     assert "LLM03" in text and "ASI02" in text
     assert "BYPASS" in text
-    # the naive reference is intentionally foolable -> not clean
-    assert "CLEAN" not in text.splitlines()[3]
+    # the naive reference is intentionally foolable -> not clean (assert on
+    # content, not a positional line index; "CLEAN" appears only in the score line)
+    assert "CLEAN" not in text

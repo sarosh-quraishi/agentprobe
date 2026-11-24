@@ -26,6 +26,8 @@ no API key, no network. Register a real tool's shipped guard behind the
 """
 from __future__ import annotations
 
+import hashlib
+
 from agentprobe.oracle import (
     BYPASS,
     OVERBLOCK,
@@ -62,6 +64,27 @@ _EXTRA_CASES: list[GateCase] = [
 # The published battery: the curated seed set plus the execution-layer extras.
 BENCHMARK_CASES: list[GateCase] = [*SEED_CASES, *_EXTRA_CASES]
 OWASP_BENCHMARK = ConformanceBattery(BENCHMARK_CASES)
+
+
+def fingerprint(cases: list[GateCase] = BENCHMARK_CASES) -> str:
+    """A stable content hash of the battery's scored fields.
+
+    `BENCHMARK_CASES` is composed from `oracle.SEED_CASES`, which is maintained
+    independently, so the version string alone cannot guarantee a scorecard is
+    reproducible. This fingerprint pins the actual case content; a test asserts
+    it against `BENCHMARK_FINGERPRINT`, so any change to the effective battery
+    (including an upstream SEED_CASES edit) fails CI and forces both an intended
+    fingerprint update and a `BENCHMARK_VERSION` bump."""
+    parts = sorted(
+        f"{c.command}\x1f{c.class_id}\x1f{int(c.expect_contained)}\x1f{int(c.require_block)}"
+        for c in cases
+    )
+    return hashlib.sha256("\x1e".join(parts).encode()).hexdigest()[:16]
+
+
+# Pins BENCHMARK_CASES content. If a test flags a mismatch: that is intentional
+# only when you changed the battery — update this AND bump BENCHMARK_VERSION.
+BENCHMARK_FINGERPRINT = "984106d9f8c2c5aa"
 
 
 def run_benchmark(oracle: GateOracle) -> BatteryReport:
