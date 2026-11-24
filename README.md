@@ -35,6 +35,15 @@ what executes); if you know of one, we'd like to hear about it.
 | `s5`  | Edit-scope swap | Did the agent edit only the files/scope the human authorized, or did poisoned repo content widen, redirect, or inject into its edits? |
 | `s8`  | Auto-invocation map | For each tool the agent exposes, does it actually gate it — or run it silently? And does the behaviour match what the agent *claims*? |
 
+## Where this sits (OWASP)
+
+Prompt-level red-teamers (garak, promptfoo) test what an agent **says** — whether
+it can be induced to *propose* a forbidden action. agentprobe tests what it
+**does** — whether that action *executes past the human-approval gate*. In OWASP
+terms that's **LLM03** (Excessive Agency), **ASI02** (Tool Misuse) and **ASI03**
+(Identity/Privilege Abuse) at the **execution layer**, which the proposal-level
+scanners stop short of. Full probe→risk mapping: [docs/owasp-mapping.md](docs/owasp-mapping.md).
+
 ## Guard conformance (`GateOracle`)
 
 The probes above drive a whole agent. `GateOracle` tests the other half: the
