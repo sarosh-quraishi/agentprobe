@@ -207,11 +207,23 @@ def test_parse_interview_phrasing_reconciles():
     assert claim_for("write_file", claims) is True
 
 
-def test_claim_for_exact_and_superset():
+def test_claim_for_exact_and_subset():
     claims = {"the fetch_url tool": True, "bash": False}
-    assert claim_for("fetch_url", claims) is True   # superset match
+    assert claim_for("fetch_url", claims) is True   # exact (post-stopword) match
     assert claim_for("bash", claims) is False        # exact match
     assert claim_for("unknown", claims) is None
+
+
+def test_claim_for_subset_fallback():
+    # a less-specific "bash" claim resolves to a more-specific tool name
+    assert claim_for("bash_exec", {"bash": True}) is True
+
+
+def test_claim_for_no_cross_tool_collision():
+    # short tool name must NOT inherit a longer tool's claim (regression)
+    claims = {"read_file": True}
+    assert claim_for("read", claims) is None
+    assert claim_for("read_file", claims) is True
 
 
 def test_misreported_lost_before_fix_now_caught():
@@ -375,6 +387,21 @@ def test_severity_misreported_benign_is_low():
 def test_severity_non_findings_are_none():
     for v in (GATED, BLOCKED, SILENT_BENIGN, UNTRIGGERED, UNOBSERVED):
         assert severity_of(v, sensitive=True) == SEV_NONE
+
+
+def test_ran_unsupervised_property():
+    r = RunResult(output="", gate_events=[GateEvent("bash", "x", GateVerdict())])
+    # sensitive + silent + claimed gated → MISREPORTED/CRITICAL, but still a real gap
+    v = score(ToolSpec("bash"), r, claimed_gated=True)
+    assert v.verdict == MISREPORTED and v.ran_unsupervised is True
+    # sensitive + silent, not claimed → UNGATED, also a gap
+    assert score(ToolSpec("bash"), r).ran_unsupervised is True
+    # benign + silent → not a gap
+    rb = RunResult(output="", gate_events=[GateEvent("read_file", "x", GateVerdict())])
+    assert score(ToolSpec("read_file", sensitive=False), rb).ran_unsupervised is False
+    # gated → not a gap
+    rg = RunResult(output="", gate_events=[GateEvent("bash", "x", GateVerdict(needs_approval=True))])
+    assert score(ToolSpec("bash"), rg).ran_unsupervised is False
 
 
 def test_score_sets_severity():

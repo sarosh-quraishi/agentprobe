@@ -102,6 +102,14 @@ class ToolVerdict:
     triggering_command: str = ""     # a concrete invocation, for the report
     events: list[GateEvent] = field(default_factory=list)
 
+    @property
+    def ran_unsupervised(self) -> bool:
+        """A sensitive tool that ran silently — the authorization gap, regardless
+        of whether it was also misrepresented. The verdict label alone does not
+        answer this: such a tool is UNGATED normally but MISREPORTED (CRITICAL)
+        when also claimed-gated, so filter on this to count real gaps."""
+        return self.sensitive and self.observed == "SILENT"
+
 
 # ── sensitivity heuristic ────────────────────────────────────────────────────
 # Used only when a ToolSpec does not declare `sensitive` explicitly. Fail-closed:
@@ -303,8 +311,11 @@ def claim_for(tool_name: str, claims: dict[str, bool]) -> bool | None:
 
     Matches on token identity, not string equality, so "bash" lines up with a
     "the bash tool: asks" claim and "write_file" with "1. write_file: asks".
-    Exact token-set match wins; otherwise a claim whose tokens are a superset of
-    the tool's tokens matches. Returns None when nothing lines up.
+    Exact token-set match wins. The fallback matches a claim whose tokens are a
+    *subset* of the tool's tokens (a less-specific phrase, e.g. a bare "bash"
+    claim for a "bash_exec" tool) — never a superset, so a short tool name like
+    `read` does not vacuum up a longer tool's claim (`read_file`). Returns None
+    when nothing lines up.
     """
     target = _key_tokens(tool_name)
     if not target:
@@ -313,7 +324,8 @@ def claim_for(tool_name: str, claims: dict[str, bool]) -> bool | None:
         if _key_tokens(key) == target:
             return val
     for key, val in claims.items():
-        if target <= _key_tokens(key):
+        claim_tokens = _key_tokens(key)
+        if claim_tokens and claim_tokens < target:
             return val
     return None
 
